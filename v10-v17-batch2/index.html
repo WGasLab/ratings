@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>V1.0 vs V1.7, no 5Hz, batch 2</title><style>body{margin:0}[hidden]{display:none!important}</style></head><body><link rel="preconnect" href="https://fonts.googleapis.com">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Batch 2"><link rel="apple-touch-icon" href="../icon-180.png"><title>V1.0 vs V1.7, no 5Hz, batch 2</title><style>body{margin:0}[hidden]{display:none!important}</style></head><body><link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
 <style>
 /* Mobile-first blind rating: one pair per screen, thumb-sized controls, the dock at the bottom. */
@@ -294,4 +294,45 @@ render();
   }, () => { $("status").textContent = "Lost the connection to the shared votes. Your picks stay on this phone; reload to reconnect."; });
 })();
 </script>
-</body></html>
+<style>
+.offline { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 10px; }
+.offline p { margin: 0; font-size: 14px; color: var(--muted); } .offline b { color: var(--fg); }
+.offline button { min-height: 46px; border-radius: 12px; border: 1.5px solid var(--accent); background: transparent; color: var(--accent); font-weight: 700; font-size: 15px; }
+.offline.ready { border-color: var(--ok); } .offline.ready b { color: var(--ok); }
+</style>
+<script>
+(() => {  // offline: the page is kept by the worker; "Save for offline" stores every song of this test
+  if (!("serviceWorker" in navigator) || !("caches" in window)) return;
+  navigator.serviceWorker.register("../sw.js", { scope: "../" }).catch(() => {});
+  const urls = [...new Set(DATA.flatMap(p => p.tracks.map(t => t.src).filter(Boolean)))].map(u => new URL(u, location.href).href);
+  const mb = Math.round(urls.length * 0.96);
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const home = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+  const box = el("section", { class: "offline", "aria-live": "polite" }), text = el("p"), btn = el("button", { type: "button" }, `Save for offline (${mb} MB)`);
+  const tip = ios && !home ? el("p", {}, "On iPhone: first tap Share, then “Add to Home Screen”, open the test from there and save it there. Safari and the Home Screen keep separate copies.") : null;
+  box.append(text, ...(tip ? [tip] : []), btn);
+  document.querySelector(".top").after(box);
+  async function count() { const c = await caches.open("ratings-v1"); return (await Promise.all(urls.map(u => c.match(u)))).filter(Boolean).length; }
+  async function show() {
+    const n = await count();
+    const done = n === urls.length;
+    box.classList.toggle("ready", done); btn.hidden = done; if (tip) tip.hidden = done;
+    text.replaceChildren(...(done ? [el("b", {}, "Saved on this phone."), " This test works without internet now."]
+      : [el("b", {}, "Rate without internet?"), ` Save the ${urls.length} songs on your phone first, while you have Wi-Fi.` + (n ? ` (${n} already saved)` : "")]));
+  }
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+    const c = await caches.open("ratings-v1");
+    try { await c.put(location.origin + location.pathname, await fetch(location.pathname, { cache: "reload" })); } catch (e) {}
+    let n = 0, failed = 0;
+    for (const u of urls) {
+      if (!(await c.match(u))) { try { const r = await fetch(u); if (r.ok && r.status === 200) await c.put(u, r); else failed++; } catch (e) { failed++; } }
+      btn.textContent = `Saving… ${++n} of ${urls.length}`;
+    }
+    btn.disabled = false; btn.textContent = failed ? `Some songs didn't save: tap to try again` : `Save for offline (${mb} MB)`;
+    show();
+  });
+  show();
+})();
+</script></body></html>
