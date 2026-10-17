@@ -1,5 +1,6 @@
-// Keeps the rating pages and their songs on the phone. Cache first; Safari asks media in byte ranges, so a
-// stored song is answered as 206 Partial Content, sliced from the stored copy (a whole 200 would not play).
+// Keeps the rating pages and their songs on the phone. Pages: the network first, the stored copy only offline (cache
+// first kept everyone on the version they first opened: new tests never showed up, 2026-10-17). Songs: the stored copy
+// first; Safari asks media in byte ranges, so a stored song is answered as 206 Partial Content, sliced from it.
 const CACHE = "ratings-v1";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
@@ -9,15 +10,19 @@ self.addEventListener("fetch", e => {
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const key = url.origin + url.pathname.replace(/index\.html$/, "");
+    const offline = () => new Response("Not saved on this phone yet: open it once with internet.", { status: 503, headers: { "Content-Type": "text/plain" } });
+    if (req.mode === "navigate" || key.endsWith("/") || key.endsWith(".html")) {  // a page: always the newest when online
+      try {
+        const res = await fetch(key, { cache: "no-cache", redirect: "manual" });  // a redirect (no closing slash) goes back as is
+        if (res.ok && res.status === 200) cache.put(key, res.clone());
+        return res;
+      } catch (err) {
+        return (await cache.match(key)) || offline();
+      }
+    }
     const hit = await cache.match(key);
     if (hit) return req.headers.has("range") ? partial(hit, req.headers.get("range")) : hit;
-    try {
-      const res = await fetch(req);
-      if (res.ok && res.status === 200 && (req.mode === "navigate" || key.endsWith("/"))) cache.put(key, res.clone());  // the page, for offline
-      return res;
-    } catch (err) {
-      return new Response("Not saved on this phone yet: open it once with internet.", { status: 503, headers: { "Content-Type": "text/plain" } });
-    }
+    try { return await fetch(req); } catch (err) { return offline(); }
   })());
 });
 async function partial(res, range) {

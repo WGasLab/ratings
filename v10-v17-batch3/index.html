@@ -303,7 +303,9 @@ render();
 <script>
 (() => {  // offline: the page is kept by the worker; "Save for offline" stores every song of this test
   if (!("serviceWorker" in navigator) || !("caches" in window)) return;
-  navigator.serviceWorker.register("../sw.js", { scope: "../" }).catch(() => {});
+  const had = !!navigator.serviceWorker.controller;  // a newer worker taking over: reload once, so the page is the new one
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !sessionStorage.getItem("sw-reloaded")) { try { sessionStorage.setItem("sw-reloaded", "1"); } catch (e) {} location.reload(); } });
+  navigator.serviceWorker.register("../sw.js", { scope: "../", updateViaCache: "none" }).catch(() => {});
   const urls = [...new Set(DATA.flatMap(p => p.tracks.map(t => t.src).filter(Boolean)))].map(u => new URL(u, location.href).href);
   const mb = Math.round(urls.length * 0.96);
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
